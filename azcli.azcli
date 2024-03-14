@@ -1,0 +1,8 @@
+az group create --location swedencentral --name myResourceGroup
+
+az deployment group create --resource-group myResourceGroup --template-file arm.json --what-if --parameters adminUsername=azureuser sshPublicKey="$(cat ~/.ssh/id_rsa.pub)"
+
+az vm show --resource-group myResourceGroup 
+
+
+```
