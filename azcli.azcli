@@ -1,15 +1,16 @@
-az group create --location swedencentral --name myResourceGroup4
+az group create --location swedencentral --name myResourceGroup10
 
 
 
-az deployment group create --resource-group myResourceGroup3 --template-file arm.json --parameters AdminUser=azureuser sshRSAPublicKey="$(cat ~/.ssh/id_rsa.pub)" --what-if
+az deployment group create --resource-group myResourceGroup10 --template-file arm.json --parameters AdminUser=azureuser sshRSAPublicKey="$(cat ~/.ssh/id_rsa.pub)" customDataAppServer=@cloudinitdotnet.sh --what-if
 
 
 az deployment group create --resource-group myResourceGroup4 --template-file arm.json --parameters AdminUser=azureuser sshRSAPublicKey="$(cat ~/.ssh/id_rsa.pub)" customDataAppServer=@cloudinitdotnet.sh
 
+az deployment group create --resource-group myResourceGroup10 --template-file arm.json --parameters AdminUser=azureuser sshRSAPublicKey="$(cat ~/.ssh/id_rsa.pub)" customDataAppServer=@cloudinitrevproxy.sh --what-if
 
 ```
 az vm show --resource-group myResourceGroup1 --name vmappserver --show-details --query [publicIps] --output tsv
 
-az group delete --name myResourceGroup1 --yes --no-wait
+az group delete --name myResourceGroup2 --yes --no-wait
 ```

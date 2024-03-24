@@ -14,12 +14,20 @@
                 "description": "description"
             }
         },
+
         "customDataAppServer": {
             "type": "securestring",
             "metadata": {
                 "description": "description"
             }
+        },
+        "customDataRevProxies": {
+            "type": "securestring",
+            "metadata": {
+                "description": "description"
+            }
         }
+       
         
     },
     "functions": [],
@@ -27,16 +35,28 @@
         "nsgName": "networkSecurityGroup",
         "vnetName": "virtualNetwork",
         "nicAppServerName": "networkInterfaceAppServer",
+        "nicRevProxiesName": "networkInterfaceRevProxies",
+        "nicBastionName": "networkInterfaceBastion",
         "subnetName": "subnetName",
         "vmAppServerName": "vmappserver",
+        "vmRevorcesProxiesName": "vmrevorceproxies",
+        "vmBastionName": "vmbastion",
         "sku": "22_04-lts-gen2",
         "offer": "0001-com-ubuntu-server-jammy",
         "publisher": "Canonical",
         "osDiskNameAppServer": "[concat(variables('vmAppServerName'),'_osdisk')]",
-        "publicIPAddressAppServer": "publicIPAddressAppServer"
+        "osDiskNameRevProxies": "[concat(variables('vmRevorcesProxiesName'),'_osdisk')]",
+        "osDiskNameBastion": "[concat(variables('vmBastionName'),'_osdisk')]",
+        "publicIPAddressAppServer": "publicIPAddressAppServer",
+        "publicIPAddressRevProxies": "publicIPAddressRevProxies",
+        "publicIPAddressBastion": "publicIPAddressBastion",
+        "asgNameAppServer": "asgNameAppServer",
+        "asgNameRevProxies": "asgNameRevProxies",
+        "asgNameBastion": "asgNameBastion"
 
     },
     "resources": [
+        // virtual network resource
         {
             "name": "[variables('vnetName')]",
             "type": "Microsoft.Network/virtualNetworks",
@@ -67,31 +87,104 @@
                 ]
             }
         },
+        // network security group resource
         {
             "name": "[variables('nsgName')]",
             "type": "Microsoft.Network/networkSecurityGroups",
             "apiVersion": "2023-04-01",
             "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/applicationSecurityGroups', variables('asgNameAppServer'))]"
+            ],
             "properties": {
                 "securityRules": [
                     {
-                        "name": "nsgRule1",
+                        "name": "reverseToAppServer",
                         "properties": {
                             "description": "description",
                             "protocol": "Tcp",
                             "sourcePortRange": "*",
-                            "destinationPortRange": "*",
-                            "sourceAddressPrefix": "*",
-                            "destinationAddressPrefix": "*",
+                            "destinationPortRange": "5000",
+                            "sourceApplicationSecurityGroups": [
+                                {
+                                    "id": "[resourceId('Microsoft.Network/applicationSecurityGroups', variables('asgNameRevProxies'))]"
+                                }
+                            ],
+                            "destinationApplicationSecurityGroups": [
+                                {
+                                    "id": "[resourceId('Microsoft.Network/applicationSecurityGroups', variables('asgNameAppServer'))]"
+                                }
+                            ],
                             "access": "Allow",
-                            "priority": 100,
+                            "priority": 200,
+                            "direction": "Inbound"
+                        }
+                    },
+                    {
+                        "name": "BastionToAppServerAndRevProxies",
+                        "properties": {
+                            "description": "description",
+                            "protocol": "Tcp",
+                            "sourcePortRange": "*",
+                            "destinationPortRange": "22",
+                            "sourceApplicationSecurityGroups": [
+                                {
+                                    "id": "[resourceId('Microsoft.Network/applicationSecurityGroups', variables('asgNameBastion'))]"
+                                }
+                            ],
+                            "destinationApplicationSecurityGroups": [
+                                {
+                                    "id": "[resourceId('Microsoft.Network/applicationSecurityGroups', variables('asgNameAppServer'))]"
+                                },
+                                {
+                                    "id": "[resourceId('Microsoft.Network/applicationSecurityGroups', variables('asgNameRevProxies'))]"
+                                }
+                            ],
+                            "access": "Allow",
+                            "priority": 220,
+                            "direction": "Inbound"
+                        }
+                    },
+                    {
+                        "name": "internetToRevers",
+                        "properties": {
+                            "description": "description",
+                            "protocol": "Tcp",
+                            "sourcePortRange": "*",
+                            "destinationPortRange": "80",
+                            "sourceAddressPrefix": "Internet",
+                            "destinationApplicationSecurityGroups": [
+                                {
+                                    "id": "[resourceId('Microsoft.Network/applicationSecurityGroups', variables('asgNameRevProxies'))]"
+                                }
+                            ],
+                            "access": "Allow",
+                            "priority": 210,
+                            "direction": "Inbound"
+                        }
+                    },
+                    {
+                        "name": "internetToBastion",
+                        "properties": {
+                            "description": "description",
+                            "protocol": "Tcp",
+                            "sourcePortRange": "*",
+                            "destinationPortRange": "22",
+                            "sourceAddressPrefix": "Internet",
+                            "destinationApplicationSecurityGroups": [
+                                {
+                                    "id": "[resourceId('Microsoft.Network/applicationSecurityGroups', variables('asgNameBastion'))]"
+                                }
+                            ],
+                            "access": "Allow",
+                            "priority": 250,
                             "direction": "Inbound"
                         }
                     }
                 ]
             }
         },
-        // network interface resource
+        
         // network interface Application-server
         {
             "name": "[variables('nicAppServerName')]",
@@ -109,13 +202,19 @@
                     {
                         "name": "ipConfig1",
                         "properties": {
-                            "privateIPAllocationMethod": "Dynamic",
+                            "privateIPAllocationMethod": "Static",
+                            "privateIPAddress": "10.0.0.10",
                             "subnet": {
                                 "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vnetName'), variables('subnetName'))]"
                             },
                             "publicIPAddress": {
                                 "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPAddressAppServer'))]"
-                            }
+                            },
+                            "applicationSecurityGroups": [
+                                {
+                                    "id": "[resourceId('Microsoft.Network/applicationSecurityGroups', variables('asgNameAppServer'))]"
+                                }
+                            ]
                             
                         }
                     }
@@ -135,6 +234,7 @@
                 "hardwareProfile": {
                     "vmSize": "Standard_B1s"
                 },
+                
                 "osProfile": {
                     "computerName": "[variables('vmAppServerName')]",
                     "adminUsername": "[parameters('AdminUser')]",
@@ -176,7 +276,7 @@
 
 
         },
-        // public ip addresses
+        
         // public ip address app server
         {
             "name": "[variables('publicIPAddressAppServer')]",
@@ -188,7 +288,240 @@
                 
             }
             
+        },
+        
+        // app security group app server
+        {
+            "name": "[variables('asgNameAppServer')]",
+            "type": "Microsoft.Network/applicationSecurityGroups",
+            "apiVersion": "2023-04-01",
+            "location": "[resourceGroup().location]",
+            "tags": {},
+            "properties": {}
+        },
+        // network interface revorce-proxies
+        {
+            "name": "[variables('nicRevProxiesName')]",
+            "type": "Microsoft.Network/networkInterfaces",
+            "apiVersion": "2023-04-01",
+            "location": "[resourceGroup().location]",
+            "tags": {
+                "displayName": "[variables('nicRevProxiesName')]"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+            ],
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "ipConfig1",
+                        "properties": {
+                            "privateIPAllocationMethod": "Dynamic",
+                            "subnet": {
+                                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vnetName'), variables('subnetName'))]"
+                            },
+                            "publicIPAddress": {
+                                "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPAddressRevProxies'))]"
+                            },
+                            "applicationSecurityGroups": [
+                                {
+                                    "id": "[resourceId('Microsoft.Network/applicationSecurityGroups', variables('asgNameRevProxies'))]"
+                                }
+                            ]
+                            
+                        }
+                    }
+                ]
+            }
+        },
+        // app security group revorce proxies
+        {
+            "name": "[variables('asgNameRevProxies')]",
+            "type": "Microsoft.Network/applicationSecurityGroups",
+            "apiVersion": "2023-04-01",
+            "location": "[resourceGroup().location]",
+            "tags": {},
+            "properties": {}
+        },
+                
+        // public ip address revorce proxies
+        {
+            "name": "[variables('publicIPAddressRevProxies')]",
+            "type": "Microsoft.Network/publicIPAddresses",
+            "apiVersion": "2023-04-01",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "publicIPAllocationMethod": "Dynamic"
+                
+            }
+            
+        },
+        // vm revorce proxies
+        {
+            "type" : "Microsoft.Compute/virtualMachines",
+            "apiVersion": "2023-03-01",
+            "name": "[variables('vmRevorcesProxiesName')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', variables('nicRevProxiesName'))]"
+            ],
+            "properties": {
+                "hardwareProfile": {
+                    "vmSize": "Standard_B1s"
+                },
+                
+                "osProfile": {
+                    "computerName": "[variables('vmRevorcesProxiesName')]",
+                    "adminUsername": "[parameters('AdminUser')]",
+                    "linuxConfiguration" : {
+                        "disablePasswordAuthentication": true,
+                        "ssh": {
+                            "publicKeys": [
+                                {
+                                    "path": "/home/azureuser/.ssh/authorized_keys",
+                                    "keyData": "[parameters('sshRSAPublicKey')]"
+                                }
+                            ]
+                        }
+                    },
+                    "customData": "[base64(parameters('customDataRevProxies'))]"
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "[variables('publisher')]",
+                        "offer": "[variables('offer')]",
+                        "sku": "[variables('sku')]",
+                        "version": "latest"
+                        
+                    },
+                    "osDisk": {
+                        "name": "[variables('osDiskNameRevProxies')]",
+                        "caching": "ReadWrite",
+                        "createOption": "FromImage"                        
+                    }
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('nicRevProxiesName'))]"
+                        }
+                    ]
+                }
+            }
+        },
+        //network interface Bastion
+        {
+            "name": "[variables('nicBastionName')]",
+            "type": "Microsoft.Network/networkInterfaces",
+            "apiVersion": "2023-04-01",
+            "location": "[resourceGroup().location]",
+            "tags": {
+                "displayName": "[variables('nicBastionName')]"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+            ],
+            "properties": {
+                "ipConfigurations": [
+                    {
+                        "name": "ipConfig1",
+                        "properties": {
+                            "privateIPAllocationMethod": "Dynamic",
+                            "subnet": {
+                                "id": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vnetName'), variables('subnetName'))]"
+                            },
+                            "publicIPAddress": {
+                                "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('publicIPAddressBastion'))]"
+                            },
+                            "applicationSecurityGroups": [
+                                {
+                                    "id": "[resourceId('Microsoft.Network/applicationSecurityGroups', variables('asgNameBastion'))]"
+                                }
+                            ]
+                            
+                        }
+                    }
+                ]
+            }
+        },
+        // public ip address Bastion
+        {
+            "name": "[variables('publicIPAddressBastion')]",
+            "type": "Microsoft.Network/publicIPAddresses",
+            "apiVersion": "2023-04-01",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "publicIPAllocationMethod": "Dynamic"
+                
+            }
+            
+        },
+        // app security group Bastion
+        {
+            "name": "[variables('asgNameBastion')]",
+            "type": "Microsoft.Network/applicationSecurityGroups",
+            "apiVersion": "2023-04-01",
+            "location": "[resourceGroup().location]",
+            "tags": {},
+            "properties": {}
+        },
+        // vm Bastion
+        {
+            "type" : "Microsoft.Compute/virtualMachines",
+            "apiVersion": "2023-03-01",
+            "name": "[variables('vmBastionName')]",
+            "location": "[resourceGroup().location]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/networkInterfaces', variables('nicBastionName'))]"
+            ],
+            "properties": {
+                "hardwareProfile": {
+                    "vmSize": "Standard_B1s"
+                },
+                
+                "osProfile": {
+                    "computerName": "[variables('vmBastionName')]",
+                    "adminUsername": "[parameters('AdminUser')]",
+                    "linuxConfiguration" : {
+                        "disablePasswordAuthentication": true,
+                        "ssh": {
+                            "publicKeys": [
+                                {
+                                    "path": "/home/azureuser/.ssh/authorized_keys",
+                                    "keyData": "[parameters('sshRSAPublicKey')]"
+                                }
+                            ]
+                        }
+                    }
+                   
+                },
+                "storageProfile": {
+                    "imageReference": {
+                        "publisher": "[variables('publisher')]",
+                        "offer": "[variables('offer')]",
+                        "sku": "[variables('sku')]",
+                        "version": "latest"
+                        
+                    },
+                    "osDisk": {
+                        "name": "[variables('osDiskNameBastion')]",
+                        "caching": "ReadWrite",
+                        "createOption": "FromImage"                        
+                    }
+                },
+                "networkProfile": {
+                    "networkInterfaces": [
+                        {
+                            "id": "[resourceId('Microsoft.Network/networkInterfaces', variables('nicBastionName'))]"
+                        }
+                    ]
+                }
+            }
+    
+    
         }
+
+            
        
         
     ],
